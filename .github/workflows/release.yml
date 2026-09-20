@@ -6,6 +6,12 @@ name: release
 on:
   release:
     types: [published]
+  # Re-run the build for an existing release, e.g. after a failed run.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and attach binaries to (e.g. v0.1.0)
+        required: true
 
 permissions:
   contents: write
@@ -15,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      # The suite evaluates the generated shell function in real zsh and bash.
+      - run: sudo apt-get update && sudo apt-get install -y zsh
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
@@ -36,9 +46,11 @@ jobs:
           - { runner: macos-latest, target: bun-darwin-x64, asset: darwin-x64 }
     runs-on: ${{ matrix.runner }}
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
