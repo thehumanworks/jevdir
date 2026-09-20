@@ -40,10 +40,11 @@ jobs:
         include:
           - { runner: ubuntu-latest, target: bun-linux-x64, asset: linux-x64 }
           - { runner: ubuntu-latest, target: bun-linux-arm64, asset: linux-arm64 }
-          # macOS binaries are built on macOS so they can be ad-hoc signed; Apple silicon
-          # refuses to run unsigned arm64 executables.
+          # Intel macOS runs unsigned binaries, so this target cross-compiles on Linux
+          # (macOS runner minutes are billed at a premium on private repositories).
+          - { runner: ubuntu-latest, target: bun-darwin-x64, asset: darwin-x64 }
+          # Apple silicon refuses unsigned arm64 executables: build on macOS and ad-hoc sign.
           - { runner: macos-latest, target: bun-darwin-arm64, asset: darwin-arm64 }
-          - { runner: macos-latest, target: bun-darwin-x64, asset: darwin-x64 }
     runs-on: ${{ matrix.runner }}
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
