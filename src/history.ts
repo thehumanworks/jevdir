@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 /** How a navigation was decided. */
 export type NavigationSource =
     | "exact" // query resolved to a real directory; no model call
+    | "cached" // recent independent history answered the query
     | "auto" // model answer passed the probability + confidence gate
     | "confirmed" // user picked from the list after a low-certainty model answer
     | "fallback"; // model unavailable; user picked from the local ranking
@@ -93,7 +94,7 @@ export type UsageSummary = {
 };
 
 export function summarizeUsage(entries: HistoryEntry[]): UsageSummary {
-    const bySource: Record<NavigationSource, number> = { exact: 0, auto: 0, confirmed: 0, fallback: 0 };
+    const bySource: Record<NavigationSource, number> = { exact: 0, cached: 0, auto: 0, confirmed: 0, fallback: 0 };
     let accepted = 0;
     let judged = 0;
     for (const entry of entries) {

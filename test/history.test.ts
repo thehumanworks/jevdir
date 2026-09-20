@@ -87,7 +87,7 @@ describe("history analysis", () => {
             entry("/a", "a", 0, { source: "confirmed", modelChoiceAccepted: true }),
             entry("/b", "a", 0, { source: "confirmed", modelChoiceAccepted: false }),
         ]);
-        expect(summary.bySource).toEqual({ exact: 1, auto: 1, confirmed: 2, fallback: 0 });
+        expect(summary.bySource).toEqual({ exact: 1, cached: 0, auto: 1, confirmed: 2, fallback: 0 });
         expect(summary.confirmedTopPickRate).toBe(0.5);
     });
 });

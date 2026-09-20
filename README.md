@@ -47,8 +47,8 @@ export AI_GATEWAY_API_KEY="..."   # create one in the Vercel dashboard under AI 
 
 If both are set, the native TypeSafe route is used when `@ai-sdk/typesafe-ai` is installed, otherwise the
 Gateway. On Vercel, `VERCEL_OIDC_TOKEN` also enables the Gateway route. Both routes go through `experimental_evaluate` from `ai`;
-jd never calls the TypeSafe SDK or HTTP API itself. Without a key jd still works: exact matches navigate, and
-everything else shows a locally ranked list to pick from.
+jd never calls the TypeSafe SDK or HTTP API itself. Without a key jd still works: exact matches and confident
+cache hits navigate, and everything else shows a locally ranked list to pick from.
 
 ## Usage
 
@@ -76,17 +76,19 @@ In a script or pipe (no terminal) it lists the options, exits with status 1, and
 
 1. **Exact match.** If the argument resolves to a directory from the current one (`src`, `../docs`, `~/work`,
    an absolute path), jd goes there. No model call.
-2. **Candidates.** Otherwise jd collects directories up to 3 levels below the current directory, the parent
+2. **Prediction cache.** Before scanning directories, jd checks recent history for a confident, unambiguous
+   mapping whose target still exists as a directory. A hit skips both the scan and the model. See below.
+3. **Candidates.** Otherwise jd collects directories up to 3 levels below the current directory, the parent
    directories (3 levels up) and their children, and every directory in jd history. `node_modules`, build
    output, and hidden directories are skipped (hidden ones are included when the query starts with `.`).
    A directory is kept if its name matches the query (exact, prefix, substring, path fragment, or letters in
    order) or if this same query led there before. Directories from history are included even when hidden.
    Up to 200 go to the model (its limit is 255 options), ordered by match quality and visit frequency.
-3. **One question.** A single `choice` question, `target_directory`, lists every candidate plus
+4. **One question.** A single `choice` question, `target_directory`, lists every candidate plus
    `none_of_the_above`. Each option's description states the full path, where it sits relative to the
    current directory, how the name matches, and its visit history, so options are distinguishable from each
    other. The typed text, current directory, and recent `cd`/`jd` commands go in `state`.
-4. **Gate.** jd reads `answer.choice`, `answer.probabilities[choice]`, and
+5. **Gate.** jd reads `answer.choice`, `answer.probabilities[choice]`, and
    `result.providerMetadata.typesafe.confidence.target_directory`:
 
    | Condition | What happens |
@@ -98,6 +100,35 @@ In a script or pipe (no terminal) it lists the options, exits with status 1, and
 
 The thresholds live in `THRESHOLDS` in `src/choice.ts`. They are starting values, not fitted ones; see
 [Measuring accuracy](#measuring-accuracy).
+
+## Prediction cache
+
+After about three recent independent uses of the same query, jd can jump without a directory scan or
+model call: `jd → web/src/components (cached · 3 recent uses)`. Queries ignore case, surrounding
+whitespace, and trailing slashes. The mapping is independent of your current directory, so an unambiguous
+alias works anywhere. Exact paths still take priority. Deleted, renamed, or non-directory targets miss.
+
+The existing history file is the only cache store. Each eligible navigation contributes
+`0.5^(age / half-life)` to its target's score, and entries older than the TTL do not count. A target needs
+at least the minimum score and 80% of the query's total decayed weight; ambiguous names still go to the
+model. An explicit correction (`confirmed` with the model's choice rejected) counts twice, for the path
+you picked. This gives deliberate feedback more influence than an automatic jump without letting one
+correction establish a mapping on its own. Other confirmed choices, automatic jumps, and local fallback
+selections count once. Exact-path and cached jumps never count, so cache hits cannot renew themselves.
+The displayed recent-use count is the number of eligible entries for the winning target, not its score.
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `JD_CACHE_TTL_DAYS` | `14` | Hard evidence lifetime; limits stale mappings after directory changes |
+| `JD_CACHE_HALF_LIFE_DAYS` | `7` | Score halves each week, so long gaps force a fresh prediction |
+| `JD_CACHE_MIN_SCORE` | `2.5` | Requires roughly three fresh uses rather than trusting one prediction |
+| `JD_NO_CACHE` | unset | Any non-empty value other than `0` skips lookup for that run |
+
+The numeric settings must be finite and positive; invalid values use the defaults. For example,
+`JD_NO_CACHE=1 jd comp` asks for a fresh prediction (or local selection without a model), while still
+recording the resulting navigation. This also lets you correct a currently cached mapping.
+`jd --stats` reports cached navigations separately. Model answers still require probability ≥ 0.7 and
+confidence ≥ 0.6 for an automatic jump.
 
 ## History and privacy
 
@@ -136,6 +167,7 @@ bun run typecheck
 | `src/candidates.ts` | Directory discovery, name matching, local ranking |
 | `src/choice.ts` | The `experimental_evaluate` call, question construction, confidence gate, model resolution |
 | `src/history.ts` | History file, frequency analysis, shell-history navigation commands |
+| `src/cache.ts` | Pure history-backed prediction cache, decay, dominance, and environment options |
 | `scripts/accuracy.ts` | Live labeled accuracy check |
 
 A directory literally named `init` can be reached with `jd ./init`.
