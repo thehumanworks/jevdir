@@ -21,14 +21,16 @@ export function makeTree(dirs: string[]): string {
  * every call so tests can assert on the exact request the SDK sent.
  */
 export function mockJev(
-    answer: (options: EvaluateOptions) => { choice: string; probabilities?: Record<string, number>; confidence?: number },
+    answer: (options: EvaluateOptions) => { choice: string; probabilities?: Record<string, number>; confidence?: number;
+        usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number } },
 ) {
     const calls: EvaluateOptions[] = [];
     const model = new Experimental_EvaluationMockModelV4({
         doEvaluate: async (options) => {
             calls.push(options);
-            const { choice, probabilities, confidence } = answer(options);
+            const { choice, probabilities, confidence, usage } = answer(options);
             return {
+                usage,
                 answers: { target_directory: { type: "choice", choice, probabilities } },
                 warnings: [],
                 providerMetadata:
@@ -53,6 +55,7 @@ export function makeDeps(cwd: string, overrides: Partial<Deps> = {}): Deps & { l
     return {
         cwd,
         historyFile: join(cwd, ".jd_history_test.json"),
+        usageFile: join(cwd, ".jd_usage_test.json"),
         recentNavigation: () => ["cd ~/work", "jd api"],
         interactive: false,
         prompt: async () => "",

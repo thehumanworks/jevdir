@@ -57,6 +57,8 @@ jd src/components   # a real path from here: goes straight there, no API call
 jd comp             # partial name: the model picks, jd jumps if it is sure
 jd api<Tab>         # tab completion: matching directories, ranked locally (no API call)
 jd --stats          # how past navigations were decided
+jd --usage          # token usage, estimated cost, and Gateway billing
+jd --usage --json   # the same report as one JSON object on stdout
 ```
 
 When the model is not sure, jd asks instead of guessing:
@@ -71,6 +73,41 @@ Go to [1-3, Enter = 1, q = cancel]:
 ```
 
 In a script or pipe (no terminal) it lists the options, exits with status 1, and does not move.
+
+## Usage and cost
+
+`jd --usage` writes a compact report to stderr for today, the last 7 and 30 calendar days,
+and all time (UTC). It includes calls, known input/output tokens, estimated USD cost, average
+tokens and cost per call, and calls with unknown token counts. Unknown tokens are not treated
+as known free usage: estimates can undercount when a provider fails or omits usage.
+`jd --usage --json` writes the same information as one JSON object to stdout.
+
+Local estimates use **$0.40 per million input tokens** for Jev and **$0 per million output tokens**.
+These are configurable assumptions, not a verified price quote. Override them with
+`JD_PRICE_INPUT_PER_MTOK` and `JD_PRICE_OUTPUT_PER_MTOK`. The report prints the rates used;
+changing them recalculates estimates for all recorded usage.
+
+Each model call is recorded in `~/.jd_usage.json` (override with `JD_USAGE_FILE`), including
+its time, model, candidate count, routing result and available token counts. Failed and timed-out
+calls are recorded with unknown tokens. Automatic SDK retries are disabled so one recorded call
+means one evaluation attempt. Exact matches and unavailable credentials do not add calls.
+The ledger keeps at most 500 detailed records, then combines older records into daily totals.
+Storage grows by at most one small aggregate per active day, rather than with every call; lifetime
+totals are retained. Writes use atomic replacement, fail fast on concurrent writers, and have a
+150 ms waiting budget. A write failure produces one warning and never prevents navigation.
+Missing or corrupt ledgers read as empty.
+
+With `AI_GATEWAY_API_KEY`, jd also requests Gateway spend reports for `typesafe-ai/jev` and the
+account credit balance, with a 2-second reporting deadline. These billed figures cover **all activity
+for that model in the Gateway account**, not only jd, and credits are account-wide. Native TypeSafe
+calls are not included in Gateway billing. Without the key, or if billing fails, jd shows a one-line
+note and the local estimate. The installed SDK forwards evaluation provider metadata but does not
+define a per-call Gateway cost field; jd does not guess one.
+
+The no-model column counts exact-match navigations in retained history (latest 500 entries), not
+lifetime savings. History's fallback source cannot distinguish missing credentials from failed model
+calls, so those navigations are not claimed as model-free. Token savings for bypasses cannot be
+measured without making the calls they avoid.
 
 ## How it decides
 

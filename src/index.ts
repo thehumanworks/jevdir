@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createInterface } from "node:readline";
+import { defaultUsageFile, recordUsage, usageReport, formatUsage, type SpendFetcher } from "./usage";
 import type { Experimental_EvaluationModel } from "ai";
 import { findExactMatch, gatherCandidates, displayPath, type Candidate } from "./candidates";
 import { chooseDir, resolveModel, routePrediction, type Prediction, type RankedCandidate } from "./choice";
@@ -20,6 +21,8 @@ import {
 export type Deps = {
     cwd: string;
     historyFile: string;
+    usageFile?: string;
+    spendFetcher?: SpendFetcher;
     /** Injected in tests; resolved from the environment when omitted. */
     model?: Experimental_EvaluationModel;
     recentNavigation: () => string[];
@@ -37,6 +40,7 @@ const MAX_OPTIONS_SHOWN = 5;
 const USAGE = `usage: jd <partial-dir>     jump to the directory you most likely mean
        jd init [zsh|bash]  print the shell function + tab completion (eval it in your rc file)
        jd --stats          show how past navigations were decided
+       jd --usage [--json] show token usage, estimated cost and Gateway billing
        jd --complete <p>   list completion candidates (used by the shell completion)`;
 
 const color = (code: number, text: string) =>
@@ -53,7 +57,7 @@ function shellInit(shell: string): string {
     const run = compiled ? `command ${quote(process.execPath)}` : `command bun ${quote(import.meta.path)}`;
     const fn = `jd() {
   case "$1" in
-    ""|init|-h|--help|--stats|--complete) ${run} "$@"; return ;;
+    ""|init|-h|--help|--stats|--usage|--complete) ${run} "$@"; return ;;
   esac
   local dest
   dest="$(${run} "$@")" || return $?
@@ -122,8 +126,10 @@ async function predict(query: string, candidates: Candidate[], deps: Deps): Prom
         }
         model = resolved.model;
     }
+    const timestamp = deps.now();
+    let prediction: Prediction | null = null;
     try {
-        return await chooseDir({
+        prediction = await chooseDir({
             model,
             query,
             cwd: deps.cwd,
@@ -132,9 +138,16 @@ async function predict(query: string, candidates: Candidate[], deps: Deps): Prom
             now: deps.now(),
             abortSignal: AbortSignal.timeout(10_000),
         });
+        return prediction;
     } catch (error) {
         deps.log(color(33, `jd: model unavailable — ${(error as Error).message}`));
         return null;
+    } finally {
+        await recordUsage(deps.usageFile ?? defaultUsageFile(), {
+            ...prediction?.usage, timestamp, modelId: prediction?.usage?.modelId ?? (typeof model === "string" ? model : model.modelId),
+            label: typeof model === "string" ? model : `${model.provider} ${model.modelId}`, candidates: candidates.length,
+            route: prediction ? routePrediction(prediction) : "error",
+        }, deps.log);
     }
 }
 
@@ -199,6 +212,13 @@ export async function run(args: string[], deps: Deps): Promise<RunResult> {
         const history = analyzeHistory(loadHistory(deps.historyFile), query, deps.now());
         const names = gatherCandidates(query, deps.cwd, history).map((candidate) => candidate.display);
         return { exitCode: 0, stdout: names.join("\n") };
+    }
+    if (first === "--usage") {
+        const report = await usageReport({ file: deps.usageFile ?? defaultUsageFile(), historyFile: deps.historyFile,
+            now: deps.now(), fetcher: deps.spendFetcher });
+        if (rest.includes("--json")) return { exitCode: 0, stdout: JSON.stringify(report) };
+        deps.log(formatUsage(report));
+        return { exitCode: 0, stdout: "" };
     }
     if (first === "--stats") {
         const usage = summarizeUsage(loadHistory(deps.historyFile));
