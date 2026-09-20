@@ -20,17 +20,24 @@ bun install
 bun run install:bin     # compiles dist/jd and copies it to ~/.local/bin/jd (must be on your PATH)
 ```
 
-A program cannot change its parent shell's directory, so `jd` runs as a small shell function that calls the
-binary and `cd`s to the path it prints. Add one line to `~/.zshrc` (or `~/.bashrc` with `init bash`):
+A program cannot change its parent shell's directory, so `jd` works through a small shell function that calls
+the binary and `cd`s to the path it prints. **You do not have to set this up**: the first time you run `jd`
+without the function loaded, it appends this block to `~/.zshrc` (`$ZDOTDIR/.zshrc` if set; for bash,
+`~/.bash_profile` on macOS and `~/.bashrc` elsewhere) and tells you to reload the shell:
 
 ```sh
-eval "$(jd init zsh)"
+# >>> jd >>> shell function that lets jd change directory, plus tab completion
+eval "$(command '/Users/you/.local/bin/jd' init zsh)"
+# <<< jd <<<
 ```
 
-Open a new shell after the first install. Later rebuilds need nothing: the function points at the binary's
-path, which does not change. To run from source instead, use `eval "$(bun /path/to/jd/src/index.ts init zsh)"`.
+It only ever appends, does nothing if an init line is already there, and never runs when its output is
+captured (scripts, `$(jd foo)`). If the shell is unsupported or the file is not writable, jd exits with an
+error that prints the exact line to add by hand. Later rebuilds need nothing: the function points at the
+binary's path, which does not change. To run from source instead, add
+`eval "$(bun /path/to/jd/src/index.ts init zsh)"` yourself.
 
-This also installs tab completion.
+This also installs tab completion (in zsh, `compinit` is loaded if your startup files have not done so).
 
 ## API key
 

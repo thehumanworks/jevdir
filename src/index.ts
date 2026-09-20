@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 import { createInterface } from "node:readline";
 import { statSync } from "node:fs";
+import { homedir } from "node:os";
 import { cacheOptionsFromEnv, lookupCached, type CacheOptions } from "./cache";
 import { indexedDirectories, indexOptions, rebuildIndex, type IndexOptions } from "./dirindex";
 import { defaultUsageFile, recordUsage, usageReport, formatUsage, type SpendFetcher } from "./usage";
+import { installShellIntegration, type ShellSetupInput } from "./shellsetup";
 import type { Experimental_EvaluationModel } from "ai";
 import { findExactMatch, gatherCandidates, displayPath, type Candidate } from "./candidates";
 import { chooseDir, resolveModel, routePrediction, type Prediction, type RankedCandidate } from "./choice";
@@ -35,10 +37,14 @@ export type Deps = {
     prompt: (question: string) => Promise<string>;
     log: (line: string) => void;
     now: () => number;
+    shell?: ShellContext;
     cacheOptions?: Partial<CacheOptions>;
     noCache?: string;
     isDirectory?: (path: string) => boolean;
 };
+
+/** Present only in the real CLI: lets a jump detect that the cd wrapper is not loaded. */
+export type ShellContext = Omit<ShellSetupInput, "runCommand"> & { stdoutIsTTY: boolean };
 
 export type RunResult = { exitCode: number; stdout: string };
 
@@ -55,14 +61,19 @@ const color = (code: number, text: string) =>
     process.stderr.isTTY && !process.env.NO_COLOR ? `\x1b[${code}m${text}\x1b[0m` : text;
 const percent = (value: number | undefined) => (value == null ? "n/a" : `${Math.round(value * 100)}%`);
 
-function shellInit(shell: string): string {
+/** The shell command that runs this program, quoted for safe use in generated shell code. */
+function runCommand(): string {
     // Single-quoted so `$`, backticks, and quotes in the install path stay inert.
     const quote = (path: string) => `'${path.replaceAll("'", `'\\''`)}'`;
     // A compiled binary (`bun build --compile`) has a virtual module path like /$bunfs/root/jd
     // that no `bun` on disk can load; the executable itself is the program.
     // (existsSync is no test: Bun's virtual filesystem answers true for it.)
     const compiled = import.meta.path.startsWith("/$bunfs/") || import.meta.path.includes("~BUN");
-    const run = compiled ? `command ${quote(process.execPath)}` : `command bun ${quote(import.meta.path)}`;
+    return compiled ? `command ${quote(process.execPath)}` : `command bun ${quote(import.meta.path)}`;
+}
+
+function shellInit(shell: string): string {
+    const run = runCommand();
     const fn = `jd() {
   case "$1" in
     ""|init|index|--reindex|-h|--help|--stats|--usage|--complete) ${run} "$@"; return ;;
@@ -86,7 +97,9 @@ _jd() {
   dirs=(\${(f)"$(${run} --complete "\${words[CURRENT]}" 2>/dev/null)"})
   (( \${#dirs} )) && compadd -U -f -- "\${dirs[@]}"
 }
-(( $+functions[compdef] )) && compdef _jd jd`;
+# Completion needs compinit; load it when the user's startup files have not.
+(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -i; }
+compdef _jd jd`;
 }
 
 function formatOptions(ranked: RankedCandidate[], cwd: string): string[] {
@@ -220,6 +233,23 @@ async function jump(query: string, deps: Deps): Promise<RunResult> {
     return navigate(picked.path, query, "confirmed", deps, accepted);
 }
 
+function setUpShell(shell: ShellContext, deps: Deps): RunResult {
+    const result = installShellIntegration({ ...shell, runCommand: runCommand() });
+    if (result.status === "failed") {
+        deps.log(`jd: cannot change directory yet, and automatic setup failed: ${result.reason}.`);
+        deps.log("Add this line to your shell's startup file, then open a new terminal:");
+        deps.log(`  ${result.manual}`);
+        return { exitCode: 1, stdout: "" };
+    }
+    deps.log(
+        result.status === "installed"
+            ? `jd: first run — added the jd shell function to ${result.rcFile} (a program cannot cd its parent shell; the function can).`
+            : `jd: the jd shell function is set up in ${result.rcFile} but not loaded in this shell.`,
+    );
+    deps.log(`Run \`${result.reload}\` or open a new terminal, then try again.`);
+    return { exitCode: 1, stdout: "" };
+}
+
 export async function run(args: string[], deps: Deps): Promise<RunResult> {
     const [first, ...rest] = args;
     if (first === undefined || first === "-h" || first === "--help") {
@@ -271,6 +301,8 @@ export async function run(args: string[], deps: Deps): Promise<RunResult> {
         deps.log(`  model's top pick was right when it asked: ${percent(usage.confirmedTopPickRate ?? undefined)}`);
         return { exitCode: 0, stdout: "" };
     }
+    // The shell function always captures stdout, so a terminal there means nothing will `cd`.
+    if (deps.shell?.stdoutIsTTY) return setUpShell(deps.shell, deps);
     return jump(args.join(" "), deps);
 }
 
@@ -297,6 +329,13 @@ if (import.meta.main) {
         prompt: (question) => promptOn(process.stdin, process.stderr, question),
         log: (line) => process.stderr.write(line + "\n"),
         now: Date.now,
+        shell: {
+            stdoutIsTTY: Boolean(process.stdout.isTTY),
+            shellPath: process.env.SHELL,
+            home: homedir(),
+            zdotdir: process.env.ZDOTDIR,
+            platform: process.platform,
+        },
         cacheOptions: cacheOptionsFromEnv(process.env),
         noCache: process.env.JD_NO_CACHE,
     });
