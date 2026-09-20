@@ -112,6 +112,7 @@ const NAVIGATION_COMMAND = /^(cd|pushd|jd)(\s+[\w.\/~@+:,-]+)*$/;
 
 /** Pulls navigation commands out of raw shell history (zsh extended or plain format). */
 export function parseShellNavigation(raw: string, limit = 15): string[] {
+    if (limit <= 0) return [];
     const commands: string[] = [];
     for (const line of raw.split("\n")) {
         // zsh EXTENDED_HISTORY: ": 1700000000:0;cd src"

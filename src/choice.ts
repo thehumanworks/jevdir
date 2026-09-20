@@ -44,9 +44,10 @@ export function buildOptions(candidates: Candidate[], now = Date.now()) {
     for (const candidate of candidates) {
         // `__proto__` cannot be set as a plain-object key; `~` and the escape option would collide.
         const reserved = [NONE_OF_THE_ABOVE, "__proto__"].includes(candidate.display) || byKey.has(candidate.display);
-        const key = reserved || candidate.display.startsWith("~") && candidate.relation === "descendant"
+        let key = reserved || candidate.display.startsWith("~") && candidate.relation === "descendant"
             ? `./${candidate.display}`
             : candidate.display;
+        while (byKey.has(key)) key = `./${key}`;
         byKey.set(key, candidate);
         criteria[key] = describeCandidate(candidate, now);
     }
