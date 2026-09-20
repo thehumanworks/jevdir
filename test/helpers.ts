@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Experimental_EvaluationMockModelV4 } from "ai/test";
 import type { Deps } from "../src/index";
+import { indexOptions } from "../src/dirindex";
 
 type DoEvaluate = Experimental_EvaluationMockModelV4["doEvaluate"];
 export type EvaluateOptions = Parameters<DoEvaluate>[0];
@@ -53,6 +54,7 @@ export function makeDeps(cwd: string, overrides: Partial<Deps> = {}): Deps & { l
     return {
         cwd,
         historyFile: join(cwd, ".jd_history_test.json"),
+        directoryIndex: { ...indexOptions(), root: cwd, file: join(cwd, ".jd_index_test.json") },
         recentNavigation: () => ["cd ~/work", "jd api"],
         interactive: false,
         prompt: async () => "",

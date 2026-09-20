@@ -127,6 +127,7 @@ export function gatherCandidates(
     query: string,
     cwd: string,
     history: Map<string, DirectoryStats>,
+    indexed: string[] = [],
 ): Candidate[] {
     const includeHidden = query.startsWith(".");
     const pool = new Map<string, Candidate["relation"]>();
@@ -142,6 +143,9 @@ export function gatherCandidates(
     }
     for (const path of history.keys()) {
         if (!pool.has(path) && isDirectory(path)) pool.set(path, "elsewhere");
+    }
+    for (const path of indexed) {
+        if (!pool.has(path)) pool.set(path, "elsewhere");
     }
     pool.delete(cwd);
 
@@ -163,7 +167,11 @@ export function gatherCandidates(
         candidates.push({ path, display: displayPath(path, cwd), match, relation, depth, stats, score });
     }
 
-    return candidates
-        .sort((a, b) => b.score - a.score || a.display.localeCompare(b.display))
-        .slice(0, MAX_CANDIDATES);
+    candidates.sort((a, b) => b.score - a.score || a.display.localeCompare(b.display));
+    const live: Candidate[] = [];
+    for (const candidate of candidates) {
+        if (isDirectory(candidate.path)) live.push(candidate);
+        if (live.length === MAX_CANDIDATES) break;
+    }
+    return live;
 }
