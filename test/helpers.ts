@@ -4,6 +4,18 @@ import { join } from "node:path";
 import { Experimental_EvaluationMockModelV4 } from "ai/test";
 import type { Deps } from "../src/index";
 import { indexOptions } from "../src/dirindex";
+import fc from "fast-check";
+
+export const hostileString = fc.oneof(
+    fc.string({ unit: "grapheme", maxLength: 40 }),
+    fc.constantFrom("", "雪😀é", "a b", "'\"", "$HOME", "`pwd`", "a\nb", "-rf", "~", "__proto__", "constructor", "none_of_the_above", "MiXeD", "x".repeat(1024)),
+);
+
+export const propertyParameters = (numRuns = 100) => ({
+    numRuns,
+    ...(process.env.FC_SEED ? { seed: Number(process.env.FC_SEED) } : {}),
+    ...(process.env.FC_PATH ? { path: process.env.FC_PATH } : {}),
+});
 
 type DoEvaluate = Experimental_EvaluationMockModelV4["doEvaluate"];
 export type EvaluateOptions = Parameters<DoEvaluate>[0];

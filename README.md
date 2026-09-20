@@ -202,6 +202,27 @@ bun test            # unit tests; the model is Experimental_EvaluationMockModelV
 bun run typecheck
 ```
 
+### Testing
+
+The fast-check properties in `test/*.property.test.ts` test hostile strings, shell-history privacy,
+matching and path displays, history persistence and decay, unique model options, confidence thresholds,
+and end-to-end navigation. Model tests use `Experimental_EvaluationMockModelV4` through the real
+`experimental_evaluate`; they make no provider requests. Filesystem tests use temporary directories,
+and shell-quoting tests execute a real `sh`. Run all tests with `bun test`.
+
+Failures print a seed, shrink path, and counterexample. Replay a single failing property with its reported
+values (use the exact test name so the shrink path applies to the same property):
+
+```sh
+FC_SEED=-123 FC_PATH='0:1:2' bun test test/choice.property.test.ts -t 'option keys remain bijective'
+```
+
+Omit `FC_PATH` to rerun all cases for a seed. Pure properties run 100–300 cases; filesystem and SDK
+properties use smaller budgets to keep the full suite fast. Regression tests preserve discovered cases:
+colliding escaped option names, a zero shell-history limit, and newline-containing destinations.
+The CLI rejects newline-containing destination paths without recording a navigation, so stdout remains
+one directory per line.
+
 | File | Role |
 | --- | --- |
 | `src/index.ts` | CLI: argument handling, exact-match bypass, prompting, shell init and completion |

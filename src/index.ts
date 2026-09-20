@@ -109,6 +109,10 @@ async function pickFromList(ranked: RankedCandidate[], deps: Deps, enterPicksFir
 }
 
 function navigate(path: string, query: string, source: NavigationSource, deps: Deps, accepted?: boolean): RunResult {
+    if (path.includes("\n")) {
+        deps.log("jd: cannot navigate to a directory containing a newline");
+        return { exitCode: 1, stdout: "" };
+    }
     try {
         recordNavigation(
             { query, path, cwd: deps.cwd, timestamp: deps.now(), source, modelChoiceAccepted: accepted },
