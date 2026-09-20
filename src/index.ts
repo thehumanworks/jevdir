@@ -2,6 +2,7 @@
 import { createInterface } from "node:readline";
 import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
+import { basename } from "node:path";
 import { cacheOptionsFromEnv, lookupCached, type CacheOptions } from "./cache";
 import { indexedDirectories, indexOptions, rebuildIndex, type IndexOptions } from "./dirindex";
 import { defaultUsageFile, recordUsage, usageReport, formatUsage, type SpendFetcher } from "./usage";
@@ -52,7 +53,7 @@ export type RunResult = { exitCode: number; stdout: string };
 const MAX_OPTIONS_SHOWN = 5;
 
 const USAGE = `usage: jd <partial-dir>     jump to the directory you most likely mean
-       jd init [zsh|bash]  print the shell function + tab completion (eval it in your rc file)
+       jd init [zsh|bash]  print the shell function + tab completion (default: your $SHELL)
        jd index            rebuild the home directory index
        jd --stats          show how past navigations were decided
        jd --usage [--json] show token usage, estimated cost and Gateway billing
@@ -269,9 +270,10 @@ export async function run(args: string[], deps: Deps): Promise<RunResult> {
     }
     if (first === "--version" || first === "-v") return { exitCode: 0, stdout: `jd ${pkg.version}` };
     if (first === "init") {
-        const shell = rest[0] ?? "zsh";
+        // No argument: follow the host's $SHELL, the same rule first-run setup uses.
+        const shell = rest[0] ?? (deps.shell?.shellPath ? basename(deps.shell.shellPath) : "zsh");
         if (shell !== "zsh" && shell !== "bash") {
-            deps.log(`jd: unsupported shell "${shell}" (supported: zsh, bash)`);
+            deps.log(`jd: unsupported shell "${shell}" (supported: zsh, bash); pass one explicitly: jd init zsh`);
             return { exitCode: 2, stdout: "" };
         }
         return { exitCode: 0, stdout: shellInit(shell) };

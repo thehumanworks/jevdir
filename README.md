@@ -32,8 +32,9 @@ bun run install:bin     # compiles dist/jd and copies it to ~/.local/bin/jd (mus
 
 A program cannot change its parent shell's directory, so `jd` works through a small shell function that calls
 the binary and `cd`s to the path it prints. **You do not have to set this up**: the first time you run `jd`
-without the function loaded, it appends this block to `~/.zshrc` (`$ZDOTDIR/.zshrc` if set; for bash,
-`~/.bash_profile` on macOS and `~/.bashrc` elsewhere) and tells you to reload the shell:
+without the function loaded, it reads `$SHELL`, appends this block to that shell's startup file only, and tells you to reload the
+shell. For zsh that file is `~/.zshrc` (`$ZDOTDIR/.zshrc` if set); for bash it is `~/.bash_profile` on macOS
+and `~/.bashrc` elsewhere. `jd init` with no argument follows `$SHELL` the same way.
 
 ```sh
 # >>> jd >>> shell function that lets jd change directory, plus tab completion

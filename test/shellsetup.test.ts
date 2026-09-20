@@ -98,6 +98,23 @@ describe("running without the shell function", () => {
         expect(existsSync(join(home, ".zshrc"))).toBe(false);
     });
 
+    test("init without an argument follows $SHELL", async () => {
+        const home = makeTree([]);
+        const bash = await run(["init"], makeDeps(makeTree([]), { shell: { ...shell(home, true), shellPath: "/opt/homebrew/bin/bash" } }));
+        expect(bash.stdout).toContain("complete -o filenames -F _jd jd");
+        const zsh = await run(["init"], makeDeps(makeTree([]), { shell: shell(home, true) }));
+        expect(zsh.stdout).toContain("compdef _jd jd");
+        const fish = await run(["init"], makeDeps(makeTree([]), { shell: { ...shell(home, true), shellPath: "/usr/bin/fish" } }));
+        expect(fish.exitCode).toBe(2);
+    });
+
+    test("only the $SHELL startup file is ever written", async () => {
+        const home = makeTree([]);
+        await run(["src"], makeDeps(makeTree(["src"]), { shell: shell(home, true) }));
+        expect(existsSync(join(home, ".zshrc"))).toBe(true);
+        expect(existsSync(join(home, ".bashrc")) || existsSync(join(home, ".bash_profile"))).toBe(false);
+    });
+
     test("init, --stats and --complete never trigger setup", async () => {
         const home = makeTree([]);
         for (const args of [["init", "zsh"], ["--stats"], ["--complete", "x"], ["--help"]]) {
