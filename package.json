@@ -1,0 +1,21 @@
+{
+  "name": "jd",
+  "type": "module",
+  "bin": {
+    "jd": "src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "eval": "bun scripts/accuracy.ts",
+    "compile": "bun build --compile src/index.ts --outfile dist/jd --smol",
+    "install:bin": "bun run compile && mkdir -p ~/.local/bin && install -m 755 dist/jd ~/.local/bin/jd"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "fast-check": "^4.10.2"
+  },
+  "dependencies": {
+    "ai": "^7.0.107"
+  }
+}
