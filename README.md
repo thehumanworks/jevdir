@@ -139,8 +139,9 @@ From any directory, `jd mise`, `jd .config`, and completion can find `~/.config/
 Path fragments such as `config/mise` and `.config/mi` work too. Completion stays model-free; selecting a
 completion navigates by exact path in bash and zsh, including `~`-abbreviated paths outside cwd.
 
-The index includes hidden directories, scans breadth-first to depth 5, and stops at 50,000 directories or
-150 ms of scanning work. Filesystem calls already in progress cannot be interrupted, so slow or network
+The index includes hidden directories, scans breadth-first to depth 5, and stops at 50,000 directories. The
+very first lookup blocks for at most 300 ms of scanning; if that was not enough, a detached process finishes
+the full scan (up to 30 s) and later lookups use the complete index. `jd index` always runs the full scan. Filesystem calls already in progress cannot be interrupted, so slow or network
 filesystems can exceed this budget. Directory symlinks are offered but never traversed. It skips
 `node_modules`, `.git`, `.cache`, `.Trash`, `.npm`, `.bun/install`, `.cargo/registry`, all of macOS `Library`,
 common build output and virtual environments. Unreadable subtrees are skipped. Large homes can have a
@@ -158,7 +159,8 @@ literally named `index`.
 | `JD_INDEX_FILE` | `$XDG_CACHE_HOME/jd/directories.json`, or `~/.cache/jd/directories.json` | Index state file |
 | `JD_INDEX_DEPTH` | `5` | Maximum depth (up to 20) |
 | `JD_INDEX_MAX_ENTRIES` | `50000` | Maximum directory count (up to 200000) |
-| `JD_INDEX_BUDGET_MS` | `150` | Scan budget (up to 2000 ms) |
+| `JD_INDEX_BUDGET_MS` | `300` | Budget for the first, blocking build (up to 2000 ms) |
+| `JD_INDEX_FULL_BUDGET_MS` | `30000` | Budget for `jd index` and background refreshes |
 | `JD_INDEX_MAX_AGE_MS` | `86400000` | Refresh age (up to 30 days) |
 
 Run `jd index` after changing scan limits. The index stores directory paths locally, not file contents.

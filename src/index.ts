@@ -219,7 +219,8 @@ export async function run(args: string[], deps: Deps): Promise<RunResult> {
     }
     if (first === "index" || first === "--reindex") {
         try {
-            rebuildIndex(deps.directoryIndex ?? indexOptions(), deps.log);
+            const options = deps.directoryIndex ?? indexOptions();
+            rebuildIndex({ ...options, budgetMs: options.fullBudgetMs }, deps.log);
             return { exitCode: 0, stdout: "" };
         } catch (error) {
             deps.log(`jd: could not rebuild directory index (${(error as Error).message})`);

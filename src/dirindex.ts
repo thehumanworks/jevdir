@@ -9,10 +9,14 @@ export type IndexOptions = {
     file: string;
     maxDepth: number;
     maxEntries: number;
+    /** Budget for the first, blocking build: the user is waiting on it. */
     budgetMs: number;
+    /** Budget for `jd index` and background refreshes, where nobody is waiting. */
+    fullBudgetMs: number;
     maxAgeMs: number;
 };
-export type DirectoryIndex = { version: 1; root: string; createdAt: number; paths: string[] };
+/** `partial`: the scan stopped at the time budget, so deeper directories are missing. */
+export type DirectoryIndex = { version: 1; root: string; createdAt: number; paths: string[]; partial?: boolean };
 const IGNORED = new Set([
     "node_modules", ".git", ".cache", ".Trash", ".npm", "Library", "__pycache__",
     "target", "dist", "build", "vendor", ".next", ".nuxt", ".venv", "venv",
@@ -29,7 +33,8 @@ export function indexOptions(env = process.env): IndexOptions {
         file: resolve(env.JD_INDEX_FILE || join(env.XDG_CACHE_HOME || join(homedir(), ".cache"), "jd", "directories.json")),
         maxDepth: positive(env.JD_INDEX_DEPTH, 5, 20),
         maxEntries: positive(env.JD_INDEX_MAX_ENTRIES, 50_000, 200_000),
-        budgetMs: positive(env.JD_INDEX_BUDGET_MS, 150, 2000),
+        budgetMs: positive(env.JD_INDEX_BUDGET_MS, 300, 2000),
+        fullBudgetMs: positive(env.JD_INDEX_FULL_BUDGET_MS, 30_000, 600_000),
         maxAgeMs: positive(env.JD_INDEX_MAX_AGE_MS, 86_400_000, 2_592_000_000),
     };
 }
@@ -48,9 +53,10 @@ export function buildIndex(options: IndexOptions): DirectoryIndex {
     const started = performance.now();
     const paths: string[] = [];
     const queue = [{ path: options.root, depth: 0 }];
+    let partial = false;
     // Stream entries rather than reading huge directories before checking the budget.
     for (let i = 0; i < queue.length && paths.length < options.maxEntries; i++) {
-        if (performance.now() - started >= options.budgetMs) break;
+        if (performance.now() - started >= options.budgetMs) { partial = true; break; }
         const current = queue[i]!;
         if (current.depth >= options.maxDepth) continue;
         let dir;
@@ -70,7 +76,7 @@ export function buildIndex(options: IndexOptions): DirectoryIndex {
         } catch { /* Unreadable directories do not stop discovery. */ }
         finally { dir?.closeSync(); }
     }
-    return { version: 1, root: options.root, createdAt: Date.now(), paths };
+    return { version: 1, root: options.root, createdAt: Date.now(), paths, ...(partial ? { partial } : {}) };
 }
 
 export function saveIndex(index: DirectoryIndex, file: string): void {
@@ -110,7 +116,8 @@ export function refreshIndex(options: IndexOptions): void {
         stdio: "ignore",
         env: { ...process.env, JD_INDEX_ROOT: options.root, JD_INDEX_FILE: options.file,
             JD_INDEX_DEPTH: String(options.maxDepth), JD_INDEX_MAX_ENTRIES: String(options.maxEntries),
-            JD_INDEX_BUDGET_MS: String(options.budgetMs), JD_INDEX_MAX_AGE_MS: String(options.maxAgeMs) },
+            JD_INDEX_BUDGET_MS: String(options.budgetMs), JD_INDEX_FULL_BUDGET_MS: String(options.fullBudgetMs),
+            JD_INDEX_MAX_AGE_MS: String(options.maxAgeMs) },
     });
     child.on("error", () => {});
     child.unref();
@@ -127,7 +134,12 @@ export function indexedDirectories(
         return index.paths;
     }
     log("jd: building the directory index for the first time (time-limited scan)");
-    try { return rebuildIndex(options, log).paths; }
+    try {
+        const built = rebuildIndex(options, log);
+        // The blocking build is cut short on a big home directory; finish it where nobody waits.
+        if (built.partial) refresh(options);
+        return built.paths;
+    }
     catch (error) {
         log(`jd: could not save directory index (${(error as Error).message})`);
         return [];

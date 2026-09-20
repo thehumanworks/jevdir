@@ -167,7 +167,9 @@ export function gatherCandidates(
         candidates.push({ path, display: displayPath(path, cwd), match, relation, depth, stats, score });
     }
 
-    candidates.sort((a, b) => b.score - a.score || a.display.localeCompare(b.display));
+    // Equal scores: the shallower path first (~/.config/mise before ~/.local/share/mise).
+    const segments = (path: string) => path.split(sep).length;
+    candidates.sort((a, b) => b.score - a.score || segments(a.path) - segments(b.path) || a.display.localeCompare(b.display));
     const live: Candidate[] = [];
     for (const candidate of candidates) {
         if (isDirectory(candidate.path)) live.push(candidate);
