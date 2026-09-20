@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { createInterface } from "node:readline";
+import { statSync } from "node:fs";
+import { cacheOptionsFromEnv, lookupCached, type CacheOptions } from "./cache";
 import type { Experimental_EvaluationModel } from "ai";
 import { findExactMatch, gatherCandidates, displayPath, type Candidate } from "./candidates";
 import { chooseDir, resolveModel, routePrediction, type Prediction, type RankedCandidate } from "./choice";
@@ -28,6 +30,9 @@ export type Deps = {
     prompt: (question: string) => Promise<string>;
     log: (line: string) => void;
     now: () => number;
+    cacheOptions?: Partial<CacheOptions>;
+    noCache?: string;
+    isDirectory?: (path: string) => boolean;
 };
 
 export type RunResult = { exitCode: number; stdout: string };
@@ -145,7 +150,22 @@ async function jump(query: string, deps: Deps): Promise<RunResult> {
         return navigate(exact, query, "exact", deps);
     }
 
-    const history = analyzeHistory(loadHistory(deps.historyFile), query, deps.now());
+    const entries = loadHistory(deps.historyFile);
+    const cached = deps.noCache && deps.noCache !== "0" ? null : lookupCached(entries, query, deps.now(),
+        deps.cacheOptions);
+    if (cached) {
+        let exists = false;
+        try {
+            exists = deps.isDirectory ? deps.isDirectory(cached.path) : statSync(cached.path).isDirectory();
+        } catch {
+            // Renamed or deleted directories invalidate a cached prediction.
+        }
+        if (exists) {
+            deps.log(`${color(36, "jd →")} ${displayPath(cached.path, deps.cwd)} ${color(2, `(cached · ${cached.hits} recent uses)`)}`);
+            return navigate(cached.path, query, "cached", deps);
+        }
+    }
+    const history = analyzeHistory(entries, query, deps.now());
     const candidates = gatherCandidates(query, deps.cwd, history);
     if (candidates.length === 0) {
         deps.log(`jd: no directory matching "${query}" near ${deps.cwd} or in jd history`);
@@ -202,9 +222,10 @@ export async function run(args: string[], deps: Deps): Promise<RunResult> {
     }
     if (first === "--stats") {
         const usage = summarizeUsage(loadHistory(deps.historyFile));
-        const { exact, auto, confirmed, fallback } = usage.bySource;
+        const { exact, cached, auto, confirmed, fallback } = usage.bySource;
         deps.log(`${usage.total} navigations in ${deps.historyFile}`);
         deps.log(`  exact match (no model call): ${exact}`);
+        deps.log(`  cached (no model call):     ${cached}`);
         deps.log(`  auto-navigated by model:     ${auto}`);
         deps.log(`  confirmed by you:            ${confirmed}`);
         deps.log(`  model unavailable:           ${fallback}`);
@@ -237,6 +258,8 @@ if (import.meta.main) {
         prompt: (question) => promptOn(process.stdin, process.stderr, question),
         log: (line) => process.stderr.write(line + "\n"),
         now: Date.now,
+        cacheOptions: cacheOptionsFromEnv(process.env),
+        noCache: process.env.JD_NO_CACHE,
     });
     if (result.stdout) process.stdout.write(result.stdout + "\n");
     process.exit(result.exitCode);
