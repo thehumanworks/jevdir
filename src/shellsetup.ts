@@ -33,7 +33,7 @@ export function rcFileFor(input: ShellSetupInput): { shell: "zsh" | "bash"; rcFi
 
 export function initBlock(shell: "zsh" | "bash", runCommand: string): string {
     return `${MARKER} shell function that lets jd change directory, plus tab completion
-eval "$(${runCommand} init ${shell})"
+${runCommand === "command jd" ? "command -v jd >/dev/null && " : ""}eval "$(${runCommand} init ${shell})"
 # <<< jd <<<`;
 }
 

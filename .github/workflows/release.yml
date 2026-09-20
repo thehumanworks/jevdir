@@ -1,0 +1,78 @@
+name: release
+
+# Publishing a GitHub release (for a tag like v0.1.0) builds standalone binaries and attaches
+# them to that release. Asset names carry os and arch so `mise use github:thehumanworks/jevdir`
+# picks the right one; each archive holds a single executable named `jd`.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, target: bun-linux-x64, asset: linux-x64 }
+          - { runner: ubuntu-latest, target: bun-linux-arm64, asset: linux-arm64 }
+          # macOS binaries are built on macOS so they can be ad-hoc signed; Apple silicon
+          # refuses to run unsigned arm64 executables.
+          - { runner: macos-latest, target: bun-darwin-arm64, asset: darwin-arm64 }
+          - { runner: macos-latest, target: bun-darwin-x64, asset: darwin-x64 }
+    runs-on: ${{ matrix.runner }}
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+
+      - name: Check the tag matches package.json
+        run: |
+          version="$(bun -e 'console.log(require("./package.json").version)')"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match package.json version $version"
+            exit 1
+          fi
+
+      - name: Compile
+        run: bun build --compile --minify --target=${{ matrix.target }} src/index.ts --outfile out/jd
+
+      - name: Ad-hoc sign (macOS)
+        if: runner.os == 'macOS'
+        run: codesign --force --sign - out/jd
+
+      - name: Smoke test (native architecture only)
+        if: matrix.asset == 'linux-x64' || matrix.asset == 'darwin-arm64'
+        run: |
+          test "$(./out/jd --version)" = "jd ${TAG#v}"
+          ./out/jd --help
+
+      - name: Package
+        run: |
+          archive="jd-${TAG}-${{ matrix.asset }}.tar.gz"
+          tar -C out -czf "$archive" jd
+          shasum -a 256 "$archive" > "$archive.sha256"
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ARCHIVE" "$ARCHIVE.sha256" --clobber

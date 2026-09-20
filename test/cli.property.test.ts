@@ -99,6 +99,7 @@ test("init quotes generated install paths byte-for-byte through a real sh", asyn
                 writeFileSync(join(install, file), readFileSync(join(import.meta.dir, "../src", file)));
             }
             symlinkSync(resolve(import.meta.dir, "../node_modules"), join(install, "node_modules"));
+            writeFileSync(join(cwd, "package.json"), readFileSync(join(import.meta.dir, "../package.json")));
             const path = join(install, "index.ts");
             const init = spawnSync(process.execPath, [path, "init", "bash"], {
                 encoding: "utf8",

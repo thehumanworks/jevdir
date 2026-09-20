@@ -1,5 +1,6 @@
 {
   "name": "jd",
+  "version": "0.1.0",
   "type": "module",
   "bin": {
     "jd": "src/index.ts"

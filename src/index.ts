@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 import { createInterface } from "node:readline";
-import { statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { cacheOptionsFromEnv, lookupCached, type CacheOptions } from "./cache";
 import { indexedDirectories, indexOptions, rebuildIndex, type IndexOptions } from "./dirindex";
 import { defaultUsageFile, recordUsage, usageReport, formatUsage, type SpendFetcher } from "./usage";
 import { installShellIntegration, type ShellSetupInput } from "./shellsetup";
 import type { Experimental_EvaluationModel } from "ai";
+import pkg from "../package.json";
 import { findExactMatch, gatherCandidates, displayPath, type Candidate } from "./candidates";
 import { chooseDir, resolveModel, routePrediction, type Prediction, type RankedCandidate } from "./choice";
 import {
@@ -55,7 +56,8 @@ const USAGE = `usage: jd <partial-dir>     jump to the directory you most likely
        jd index            rebuild the home directory index
        jd --stats          show how past navigations were decided
        jd --usage [--json] show token usage, estimated cost and Gateway billing
-       jd --complete <p>   list completion candidates (used by the shell completion)`;
+       jd --complete <p>   list completion candidates (used by the shell completion)
+       jd --version        print the version`;
 
 const color = (code: number, text: string) =>
     process.stderr.isTTY && !process.env.NO_COLOR ? `\x1b[${code}m${text}\x1b[0m` : text;
@@ -69,14 +71,19 @@ function runCommand(): string {
     // that no `bun` on disk can load; the executable itself is the program.
     // (existsSync is no test: Bun's virtual filesystem answers true for it.)
     const compiled = import.meta.path.startsWith("/$bunfs/") || import.meta.path.includes("~BUN");
-    return compiled ? `command ${quote(process.execPath)}` : `command bun ${quote(import.meta.path)}`;
+    if (!compiled) return `command bun ${quote(import.meta.path)}`;
+    // Installed as `jd` on PATH (mise, ~/.local/bin): resolve it at call time so upgrades that
+    // move the binary (mise installs live in versioned directories) keep working.
+    const onPath = Bun.which("jd");
+    if (onPath && realpathSync(onPath) === realpathSync(process.execPath)) return "command jd";
+    return `command ${quote(process.execPath)}`;
 }
 
 function shellInit(shell: string): string {
     const run = runCommand();
     const fn = `jd() {
   case "$1" in
-    ""|init|index|--reindex|-h|--help|--stats|--usage|--complete) ${run} "$@"; return ;;
+    ""|init|index|--reindex|-h|--help|--stats|--usage|--complete|-v|--version) ${run} "$@"; return ;;
   esac
   local dest
   dest="$(${run} "$@")" || return $?
@@ -247,6 +254,10 @@ function setUpShell(shell: ShellContext, deps: Deps): RunResult {
             : `jd: the jd shell function is set up in ${result.rcFile} but not loaded in this shell.`,
     );
     deps.log(`Run \`${result.reload}\` or open a new terminal, then try again.`);
+    if (!Bun.which("jd")) {
+        deps.log("Note: jd is not on your PATH, so a new shell will not find it. To install it permanently:");
+        deps.log("  mise use -g github:thehumanworks/jevdir");
+    }
     return { exitCode: 1, stdout: "" };
 }
 
@@ -256,6 +267,7 @@ export async function run(args: string[], deps: Deps): Promise<RunResult> {
         deps.log(USAGE);
         return { exitCode: first === undefined ? 2 : 0, stdout: "" };
     }
+    if (first === "--version" || first === "-v") return { exitCode: 0, stdout: `jd ${pkg.version}` };
     if (first === "init") {
         const shell = rest[0] ?? "zsh";
         if (shell !== "zsh" && shell !== "bash") {

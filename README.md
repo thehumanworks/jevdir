@@ -13,7 +13,17 @@ jd → web/src/components (probability 92% · confidence 88%)
 
 ## Install
 
-Requires [Bun](https://bun.sh) to build; the result is a standalone binary.
+With [mise](https://mise.jdx.dev) (prebuilt binaries for macOS and Linux, x64 and arm64):
+
+```sh
+mise use -g github:thehumanworks/jevdir              # install `jd` on your PATH
+mise exec github:thehumanworks/jevdir -- jd --version   # or run it once without installing
+```
+
+Or download `jd-<tag>-<os>-<arch>.tar.gz` from the [releases page](https://github.com/thehumanworks/jevdir/releases)
+and put the `jd` binary inside it on your PATH.
+
+From source (requires [Bun](https://bun.sh)):
 
 ```sh
 bun install
@@ -27,14 +37,14 @@ without the function loaded, it appends this block to `~/.zshrc` (`$ZDOTDIR/.zsh
 
 ```sh
 # >>> jd >>> shell function that lets jd change directory, plus tab completion
-eval "$(command '/Users/you/.local/bin/jd' init zsh)"
+command -v jd >/dev/null && eval "$(command jd init zsh)"
 # <<< jd <<<
 ```
 
 It only ever appends, does nothing if an init line is already there, and never runs when its output is
 captured (scripts, `$(jd foo)`). If the shell is unsupported or the file is not writable, jd exits with an
-error that prints the exact line to add by hand. Later rebuilds need nothing: the function points at the
-binary's path, which does not change. To run from source instead, add
+error that prints the exact line to add by hand. Upgrades need nothing: the function finds `jd` on your PATH each time it
+runs. To run from source instead, add
 `eval "$(bun /path/to/jd/src/index.ts init zsh)"` yourself.
 
 This also installs tab completion (in zsh, `compinit` is loaded if your startup files have not done so).
@@ -276,5 +286,9 @@ one directory per line.
 | `src/history.ts` | History file, frequency analysis, shell-history navigation commands |
 | `src/cache.ts` | Pure history-backed prediction cache, decay, dominance, and environment options |
 | `scripts/accuracy.ts` | Live labeled accuracy check |
+| `.github/workflows/release.yml` | On a published release: test, compile for macOS and Linux (x64, arm64), attach archives |
+
+To release: set `version` in `package.json`, push, then publish a GitHub release tagged `v<version>`. The
+workflow refuses to build if the tag and `package.json` disagree.
 
 A directory literally named `init` can be reached with `jd ./init`.
