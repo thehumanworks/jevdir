@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createInterface } from "node:readline";
+import { indexedDirectories, indexOptions, rebuildIndex, type IndexOptions } from "./dirindex";
 import type { Experimental_EvaluationModel } from "ai";
 import { findExactMatch, gatherCandidates, displayPath, type Candidate } from "./candidates";
 import { chooseDir, resolveModel, routePrediction, type Prediction, type RankedCandidate } from "./choice";
@@ -20,6 +21,7 @@ import {
 export type Deps = {
     cwd: string;
     historyFile: string;
+    directoryIndex?: IndexOptions;
     /** Injected in tests; resolved from the environment when omitted. */
     model?: Experimental_EvaluationModel;
     recentNavigation: () => string[];
@@ -36,6 +38,7 @@ const MAX_OPTIONS_SHOWN = 5;
 
 const USAGE = `usage: jd <partial-dir>     jump to the directory you most likely mean
        jd init [zsh|bash]  print the shell function + tab completion (eval it in your rc file)
+       jd index            rebuild the home directory index
        jd --stats          show how past navigations were decided
        jd --complete <p>   list completion candidates (used by the shell completion)`;
 
@@ -53,7 +56,7 @@ function shellInit(shell: string): string {
     const run = compiled ? `command ${quote(process.execPath)}` : `command bun ${quote(import.meta.path)}`;
     const fn = `jd() {
   case "$1" in
-    ""|init|-h|--help|--stats|--complete) ${run} "$@"; return ;;
+    ""|init|index|--reindex|-h|--help|--stats|--complete) ${run} "$@"; return ;;
   esac
   local dest
   dest="$(${run} "$@")" || return $?
@@ -146,9 +149,10 @@ async function jump(query: string, deps: Deps): Promise<RunResult> {
     }
 
     const history = analyzeHistory(loadHistory(deps.historyFile), query, deps.now());
-    const candidates = gatherCandidates(query, deps.cwd, history);
+    const candidates = gatherCandidates(query, deps.cwd, history,
+        indexedDirectories(deps.directoryIndex ?? indexOptions(), deps.log));
     if (candidates.length === 0) {
-        deps.log(`jd: no directory matching "${query}" near ${deps.cwd} or in jd history`);
+        deps.log(`jd: no directory matching "${query}" near ${deps.cwd}, in the directory index, or in jd history`);
         return { exitCode: 1, stdout: "" };
     }
 
@@ -193,11 +197,21 @@ export async function run(args: string[], deps: Deps): Promise<RunResult> {
         }
         return { exitCode: 0, stdout: shellInit(shell) };
     }
+    if (first === "index" || first === "--reindex") {
+        try {
+            rebuildIndex(deps.directoryIndex ?? indexOptions(), deps.log);
+            return { exitCode: 0, stdout: "" };
+        } catch (error) {
+            deps.log(`jd: could not rebuild directory index (${(error as Error).message})`);
+            return { exitCode: 1, stdout: "" };
+        }
+    }
     if (first === "--complete") {
         // Local only: completion must be instant, so it never calls the model.
         const query = rest[0] ?? "";
         const history = analyzeHistory(loadHistory(deps.historyFile), query, deps.now());
-        const names = gatherCandidates(query, deps.cwd, history).map((candidate) => candidate.display);
+        const names = gatherCandidates(query, deps.cwd, history,
+            indexedDirectories(deps.directoryIndex ?? indexOptions(), deps.log)).map((candidate) => candidate.display);
         return { exitCode: 0, stdout: names.join("\n") };
     }
     if (first === "--stats") {

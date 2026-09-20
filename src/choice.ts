@@ -29,7 +29,7 @@ export function describeCandidate(candidate: Candidate, now = Date.now()): strin
             ? `${candidate.depth} level${candidate.depth === 1 ? "" : "s"} below the current directory`
             : candidate.relation === "nearby"
               ? "outside the current directory, next to one of its parent directories"
-              : "elsewhere on disk, known only from past jd navigation";
+              : "elsewhere on disk, found in the directory index or past jd navigation";
     const stats = candidate.stats;
     const visits = stats
         ? `Visited ${stats.visits} time${stats.visits === 1 ? "" : "s"} via jd (${stats.queryHits} from this same typed text), last ${describeAge(stats.lastVisited, now)}`

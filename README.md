@@ -57,6 +57,7 @@ jd src/components   # a real path from here: goes straight there, no API call
 jd comp             # partial name: the model picks, jd jumps if it is sure
 jd api<Tab>         # tab completion: matching directories, ranked locally (no API call)
 jd --stats          # how past navigations were decided
+jd index            # rebuild the home directory index (also: jd --reindex)
 ```
 
 When the model is not sure, jd asks instead of guessing:
@@ -77,7 +78,9 @@ In a script or pipe (no terminal) it lists the options, exits with status 1, and
 1. **Exact match.** If the argument resolves to a directory from the current one (`src`, `../docs`, `~/work`,
    an absolute path), jd goes there. No model call.
 2. **Candidates.** Otherwise jd collects directories up to 3 levels below the current directory, the parent
-   directories (3 levels up) and their children, and every directory in jd history. `node_modules`, build
+   directories (3 levels up) and their children, every directory in jd history, and a persistent home
+   directory index. Equally good nearby matches and frequently visited directories rank above unvisited
+   indexed matches. In the local scan, `node_modules`, build
    output, and hidden directories are skipped (hidden ones are included when the query starts with `.`).
    A directory is kept if its name matches the query (exact, prefix, substring, path fragment, or letters in
    order) or if this same query led there before. Directories from history are included even when hidden.
@@ -98,6 +101,42 @@ In a script or pipe (no terminal) it lists the options, exits with status 1, and
 
 The thresholds live in `THRESHOLDS` in `src/choice.ts`. They are starting values, not fitted ones; see
 [Measuring accuracy](#measuring-accuracy).
+
+## Home directory discovery
+
+From any directory, `jd mise`, `jd .config`, and completion can find `~/.config/mise` and `~/.config`.
+Path fragments such as `config/mise` and `.config/mi` work too. Completion stays model-free; selecting a
+completion navigates by exact path in bash and zsh, including `~`-abbreviated paths outside cwd.
+
+The index includes hidden directories, scans breadth-first to depth 5, and stops at 50,000 directories or
+150 ms of scanning work. Filesystem calls already in progress cannot be interrupted, so slow or network
+filesystems can exceed this budget. Directory symlinks are offered but never traversed. It skips
+`node_modules`, `.git`, `.cache`, `.Trash`, `.npm`, `.bun/install`, `.cargo/registry`, all of macOS `Library`,
+common build output and virtual environments. Unreadable subtrees are skipped. Large homes can have a
+partial index; increase the limits and run `jd index` if needed.
+
+The first lookup builds the index synchronously and reports this on stderr. After 24 hours, lookups use
+the old index immediately and start a detached refresh. Deleted directories are removed from lookup
+results. Refreshes publish complete snapshots with atomic rename, including when multiple shells refresh
+at once. `jd index` prints its count and elapsed time on stderr; use `jd ./index` to enter a directory
+literally named `index`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `JD_INDEX_ROOT` | Home directory | Discovery root |
+| `JD_INDEX_FILE` | `$XDG_CACHE_HOME/jd/directories.json`, or `~/.cache/jd/directories.json` | Index state file |
+| `JD_INDEX_DEPTH` | `5` | Maximum depth (up to 20) |
+| `JD_INDEX_MAX_ENTRIES` | `50000` | Maximum directory count (up to 200000) |
+| `JD_INDEX_BUDGET_MS` | `150` | Scan budget (up to 2000 ms) |
+| `JD_INDEX_MAX_AGE_MS` | `86400000` | Refresh age (up to 30 days) |
+
+Run `jd index` after changing scan limits. The index stores directory paths locally, not file contents.
+Indexed candidate paths can be sent to the model under the same rules as local and history candidates.
+
+For a reproducible warm-index benchmark, run `bun test/dirindex.bench.ts`. On the development machine,
+loading 50,000 live directory paths and gathering candidates took **8.31 ms median / 9.91 ms p95** for
+`mise`, and **31.34 ms median / 32.13 ms p95** for `src` (almost all entries match). These measurements
+include local scanning, ranking, and existence checks, but exclude process startup and initial indexing.
 
 ## History and privacy
 
@@ -134,6 +173,7 @@ bun run typecheck
 | --- | --- |
 | `src/index.ts` | CLI: argument handling, exact-match bypass, prompting, shell init and completion |
 | `src/candidates.ts` | Directory discovery, name matching, local ranking |
+| `src/dirindex.ts` | Bounded home discovery, persistent snapshots, background refresh |
 | `src/choice.ts` | The `experimental_evaluate` call, question construction, confidence gate, model resolution |
 | `src/history.ts` | History file, frequency analysis, shell-history navigation commands |
 | `scripts/accuracy.ts` | Live labeled accuracy check |

@@ -225,11 +225,28 @@ describe("error handling", () => {
 
         expect(result.exitCode).toBe(1);
         expect(calls).toHaveLength(0);
-        expect(deps.logs[0]).toContain('no directory matching "zzzqqq"');
+        expect(deps.logs.some((line) => line.includes('no directory matching "zzzqqq"'))).toBe(true);
     });
 });
 
 describe("tab completion", () => {
+    test.each(["zsh", "bash"])("%s completion selects an indexed external path exactly", async (shell) => {
+        const root = makeTree(["home/.config/mise", "away/a/b/c/d"]);
+        const cwd = join(root, "away/a/b/c/d");
+        const init = (await run(["init", shell], makeDeps(root))).stdout;
+        const completion = shell === "bash"
+            ? 'COMP_WORDS=(jd mise); COMP_CWORD=1; _jd; selected="${COMPREPLY[0]}"'
+            : 'compadd() { selected="${argv[-1]}"; }; words=(jd mise); CURRENT=2; _jd';
+        const proc = Bun.spawnSync([shell, "-c", `${init}\ncd '${cwd}'\n${completion}\njd "$selected" && pwd`], {
+            env: { ...process.env, JD_HISTORY_FILE: join(root, "history.json"),
+                HOME: join(root, "home"), JD_INDEX_ROOT: join(root, "home"), JD_INDEX_FILE: join(root, "index.json"),
+                AI_GATEWAY_API_KEY: "", TYPESAFE_AI_API_KEY: "", VERCEL_OIDC_TOKEN: "" },
+        });
+        expect(proc.exitCode).toBe(0);
+        expect(proc.stdout.toString().trim()).toBe(join(root, "home/.config/mise"));
+        expect(proc.stderr.toString()).toContain("exact match");
+        expect(proc.stderr.toString()).toContain("~/.config/mise");
+    });
     test("lists matching directories locally, one per line", async () => {
         const root = makeTree(TREE);
         const { model, calls } = mockJev(() => ({ choice: NONE_OF_THE_ABOVE }));
@@ -254,7 +271,8 @@ describe("tab completion", () => {
         const init = (await run(["init", shell], makeDeps(root))).stdout;
         const script = `${init}\ncd '${root}' && jd 'my dir' 2>/dev/null && pwd`;
         const proc = Bun.spawnSync([shell, "-c", script], {
-            env: { ...process.env, JD_HISTORY_FILE: join(root, "h.json"), AI_GATEWAY_API_KEY: "", TYPESAFE_AI_API_KEY: "" },
+            env: { ...process.env, JD_HISTORY_FILE: join(root, "h.json"), JD_INDEX_ROOT: root,
+                JD_INDEX_FILE: join(root, "index.json"), AI_GATEWAY_API_KEY: "", TYPESAFE_AI_API_KEY: "" },
         });
         expect(proc.stdout.toString().trim()).toBe(join(root, "my dir"));
     });
