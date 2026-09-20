@@ -67,6 +67,7 @@ export type Prediction = {
     confidence: number | undefined;
     /** All candidates, most probable first (input order when there is no distribution). */
     ranked: RankedCandidate[];
+    usage?: import("./usage").CallUsage;
 };
 
 export type ChooseDirInput = {
@@ -84,6 +85,7 @@ export async function chooseDir(input: ChooseDirInput): Promise<Prediction> {
 
     const result = await experimental_evaluate({
         model: input.model,
+        maxRetries: 0,
         abortSignal: input.abortSignal,
         state: {
             typedDirectoryName: input.query,
@@ -120,6 +122,7 @@ export async function chooseDir(input: ChooseDirInput): Promise<Prediction> {
         probability: probabilities?.[answer.choice],
         confidence: typeof confidence === "number" ? confidence : undefined,
         ranked,
+        usage: { ...result.usage, modelId: result.response.modelId },
     };
 }
 

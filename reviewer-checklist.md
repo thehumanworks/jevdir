@@ -56,6 +56,17 @@ the command or file that proves it.
 - [ ] The real readline prompt returns the typed answer (test: `real prompt`; the other tests inject a prompt)
 - [ ] `init` output single-quotes the install path; the `tab completion` tests evaluate it in real zsh and bash
 
+### Added after the first review
+
+| Behavior | Test file |
+| --- | --- |
+| Directory index finds `~/.config/mise`-style targets from anywhere; completion stays model-free | `test/dirindex.test.ts`, `test/jd.test.ts` |
+| Cache hit needs score ≥ 2.5 within 14 days and ≥ 80% dominance; target must still exist; `cached`/`exact` entries are never evidence; `JD_NO_CACHE=1` bypasses | `test/cache.test.ts`, `test/cache-cli.test.ts` |
+| One usage record per model call, failed calls included; totals survive compaction; Gateway spend report is mocked | `test/usage.test.ts`, `test/usage.property.test.ts` |
+| Property tests with hostile inputs (privacy filter, option keys, gate incl. NaN, stdout contract, shell quoting) | `test/*.property.test.ts`; replay with `FC_SEED` / `FC_PATH` |
+
+- [ ] Not verified by the authors: a live `gateway.getSpendReport` call, and the $0.40 / M input-token Jev price
+
 ## 4. Accuracy metrics
 
 **Not yet measured by the author: no API key was available when this was written.** The reviewer must run:
